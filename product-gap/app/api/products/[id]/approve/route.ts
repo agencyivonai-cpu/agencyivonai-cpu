@@ -62,6 +62,69 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
     );
   }
 
+  const organicRows = pack.organicPlan.flatMap((concept, index) => [
+    {
+      product_id: product.id,
+      job_id: job.id,
+      channel: 'TIKTOK',
+      content_type: 'ORGANIC',
+      concept,
+      caption: null,
+      status: 'DRAFT',
+      metrics: { sequence: index + 1 }
+    },
+    {
+      product_id: product.id,
+      job_id: job.id,
+      channel: 'INSTAGRAM',
+      content_type: 'ORGANIC',
+      concept,
+      caption: null,
+      status: 'DRAFT',
+      metrics: { sequence: index + 1 }
+    },
+    {
+      product_id: product.id,
+      job_id: job.id,
+      channel: 'FACEBOOK',
+      content_type: 'ORGANIC',
+      concept,
+      caption: null,
+      status: 'DRAFT',
+      metrics: { sequence: index + 1 }
+    }
+  ]);
+
+  const seoRows = pack.seoPlan.map((concept, index) => ({
+    product_id: product.id,
+    job_id: job.id,
+    channel: 'SEO',
+    content_type: 'SEO',
+    concept,
+    status: 'DRAFT',
+    metrics: { sequence: index + 1 }
+  }));
+
+  if (organicRows.length || seoRows.length) {
+    await db.from('product_gap_content').insert([...organicRows, ...seoRows]);
+  }
+
+  const experiments = pack.adPlan.map((hypothesis, index) => ({
+    product_id: product.id,
+    job_id: job.id,
+    name: 'Paid creative ' + (index + 1),
+    experiment_type: 'PAID',
+    hypothesis,
+    status: 'PLANNED',
+    budget_limit: null,
+    stop_rule: { spendGateRequired: true },
+    success_rule: { requiresMeasuredContributionMargin: true }
+  }));
+
+  if (experiments.length) {
+    await db.from('product_gap_experiments').insert(experiments);
+  }
+
   const approvedAt = new Date().toISOString();
   await db
     .from('product_gap_products')
@@ -77,8 +140,20 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
     product_id: product.id,
     job_id: job.id,
     event_type: 'APPROVED_TO_PRODUCTION',
-    metadata: { score: product.score, margin_pct: product.margin_pct }
+    metadata: {
+      score: product.score,
+      margin_pct: product.margin_pct,
+      content_drafts: organicRows.length + seoRows.length,
+      paid_experiments: experiments.length
+    }
   });
 
-  return NextResponse.json({ ok: true, job }, { status: 201 });
+  return NextResponse.json({
+    ok: true,
+    job,
+    created: {
+      contentDrafts: organicRows.length + seoRows.length,
+      paidExperiments: experiments.length
+    }
+  }, { status: 201 });
 }
